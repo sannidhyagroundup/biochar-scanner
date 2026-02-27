@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Biochar Scanner</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --green: #2D6A4F; --green2: #40916C; --light: #D8F3DC;
+      --bg: #F4FBF6; --text: #1B2E22; --muted: #74A57F;
+      --white: #FFFFFF; --red: #E63946;
+    }
+    body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; padding-bottom: 40px; }
+    header { background: var(--green); color: var(--white); padding: 16px 20px; text-align: center; }
+    header h1 { font-size: 1.2rem; font-weight: 700; }
+    header p  { font-size: 0.75rem; opacity: 0.8; margin-top: 2px; }
+    .screen { display: none; padding: 20px; max-width: 480px; margin: 0 auto; }
+    .screen.active { display: block; }
+    .card { background: var(--white); border-radius: 14px; padding: 18px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); margin-bottom: 14px; }
+    label { display: block; font-size: 0.75rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 5px; margin-top: 12px; }
+    label:first-child { margin-top: 0; }
+    input[type="text"], input[type="number"], select {
+      width: 100%; padding: 12px 13px; border: 1.5px solid #C8E6C9;
+      border-radius: 10px; font-size: 1rem; background: var(--bg); color: var(--text); outline: none;
+    }
+    input:focus, select:focus { border-color: var(--green2); border-width: 2px; }
+    .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .btn { width: 100%; padding: 15px; border: none; border-radius: 10px; font-size: 1rem; font-weight: 700; cursor: pointer; margin-top: 10px; }
+    .btn-primary   { background: var(--green);  color: var(--white); }
+    .btn-secondary { background: var(--light);  color: var(--green); }
+    .btn-danger    { background: var(--red);     color: var(--white); }
+
+    /* Scanner */
+    #video-wrap { position: relative; border-radius: 12px; overflow: hidden; background: #000; margin-bottom: 0; }
+    #video { width: 100%; display: block; max-height: 260px; object-fit: cover; }
+    .corner { position: absolute; width: 24px; height: 24px; border-color: #fff; border-style: solid; }
+    .corner.tl { top: 12px; left: 12px; border-width: 3px 0 0 3px; border-radius: 3px 0 0 0; }
+    .corner.tr { top: 12px; right: 12px; border-width: 3px 3px 0 0; border-radius: 0 3px 0 0; }
+    .corner.bl { bottom: 12px; left: 12px; border-width: 0 0 3px 3px; border-radius: 0 0 0 3px; }
+    .corner.br { bottom: 12px; right: 12px; border-width: 0 3px 3px 0; border-radius: 0 0 3px 0; }
+    #scan-line {
+      position: absolute; left: 12px; right: 12px; height: 2px;
+      background: rgba(64,145,108,0.8);
+      animation: scanMove 2s ease-in-out infinite;
+      top: 20%;
+    }
+    @keyframes scanMove { 0%,100% { top: 20%; } 50% { top: 75%; } }
+
+    #status-msg { text-align: center; padding: 8px; font-size: 0.82rem; color: var(--muted); }
+
+    .invoice-bar {
+      background: var(--green); color: var(--white); border-radius: 10px;
+      padding: 12px 14px; font-size: 0.82rem; margin-bottom: 14px;
+      display: flex; justify-content: space-between;
+    }
+    .invoice-bar span   { opacity: 0.7; font-size: 0.7rem; display: block; }
+    .invoice-bar strong { font-size: 0.95rem; }
+
+    .scan-count { text-align: center; font-size: 2.4rem; font-weight: 800; color: var(--green); line-height: 1; }
+    .scan-count small { display: block; font-size: 0.72rem; color: var(--muted); margin-top: 3px; font-weight: 500; }
+
+    #scan-list { max-height: 220px; overflow-y: auto; }
+    .scan-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border-radius: 8px; background: var(--bg); margin-bottom: 7px; animation: popIn 0.15s ease; }
+    @keyframes popIn { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+    .scan-item .bag-id { font-weight: 700; font-size: 0.95rem; letter-spacing: 0.5px; }
+    .scan-item .st     { font-size: 0.7rem; color: var(--muted); }
+    .empty-state       { text-align: center; color: var(--muted); padding: 20px 0; font-size: 0.88rem; }
+
+    #toast {
+      position: fixed; bottom: 24px; left: 50%;
+      transform: translateX(-50%) translateY(80px);
+      background: var(--green); color: var(--white);
+      padding: 10px 22px; border-radius: 30px; font-size: 0.9rem; font-weight: 600;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.2); transition: transform 0.3s; z-index: 999; white-space: nowrap;
+    }
+    #toast.show  { transform: translateX(-50%) translateY(0); }
+    #toast.error { background: var(--red); }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>🌱 Biochar Bag Scanner</h1>
+  <p>Mati Carbon — Field Sales Tool</p>
+</header>
+
+<!-- SCREEN 1: Setup -->
+<div class="screen active" id="screen-setup">
+  <br>
+  <div class="card">
+    <label>Invoice Number</label>
+    <input type="text" id="inp-invoice" placeholder="e.g. INV-0042">
+
+    <label>Buyer Name</label>
+    <input type="text" id="inp-buyer" placeholder="e.g. Ramesh Kumar">
+
+    <label>Your Name (Agent)</label>
+    <input type="text" id="inp-agent" placeholder="e.g. Sunil">
+
+    <div class="row2">
+      <div>
+        <label>Product Type</label>
+        <select id="inp-product">
+          <option value="Biochar Standard">Biochar Standard</option>
+          <option value="Biochar Premium">Biochar Premium</option>
+          <option value="Biochar Blend">Biochar Blend</option>
+        </select>
+      </div>
+      <div>
+        <label>Qty per bag (kg)</label>
+        <input type="number" id="inp-qty" placeholder="e.g. 25" min="1">
+      </div>
+    </div>
+
+    <label>Location / Village</label>
+    <input type="text" id="inp-location" placeholder="e.g. Wardha, Maharashtra">
+
+    <label>Notes (optional)</label>
+    <input type="text" id="inp-notes" placeholder="Any extra info">
+
+    <button class="btn btn-primary" id="btn-start">Start Scanning →</button>
+  </div>
+</div>
+
+<!-- SCREEN 2: Scanning -->
+<div class="screen" id="screen-scan">
+  <br>
+  <div class="invoice-bar">
+    <div><span>INVOICE</span><strong id="disp-invoice"></strong></div>
+    <div style="text-align:center"><span>PRODUCT</span><strong id="disp-product"></strong></div>
+    <div style="text-align:right"><span>BUYER</span><strong id="disp-buyer"></strong></div>
+  </div>
+
+  <div class="card" style="padding:8px;">
+    <div id="video-wrap">
+      <video id="video" autoplay playsinline muted></video>
+      <div class="corner tl"></div>
+      <div class="corner tr"></div>
+      <div class="corner bl"></div>
+      <div class="corner br"></div>
+      <div id="scan-line"></div>
+    </div>
+    <div id="status-msg">Starting camera…</div>
+  </div>
+
+  <div class="card" style="padding:14px;">
+    <div class="scan-count" id="scan-count">0<small>bags scanned</small></div>
+  </div>
+
+  <div class="card">
+    <label>Scanned Bags</label>
+    <div id="scan-list"><div class="empty-state">Point camera at a barcode</div></div>
+  </div>
+
+  <button class="btn btn-danger" id="btn-finish">✓ Finish Invoice</button>
+  <button class="btn btn-secondary" id="btn-cancel">Cancel</button>
+</div>
+
+<div id="toast"></div>
+
+<script>
+  const APPS_SCRIPT_URL = "https://script.google.com/a/macros/ground-up.in/s/AKfycbxuQqpMERjA2AGXwdsz1Fq5tpK9C5S3zCfqIKIou6RVSWR88GRCaNGWscmb8oUBGetHMA/exec";
+
+  let stream       = null;
+  let detector     = null;
+  let scanLoop     = null;
+  let scannedBags  = [];
+  let lastScanned  = "";
+  let cooldown     = false;
+  let inv, buyer, agent, product, qty, location, notes;
+
+  document.getElementById('btn-start').addEventListener('click',  startInvoice);
+  document.getElementById('btn-finish').addEventListener('click', finishInvoice);
+  document.getElementById('btn-cancel').addEventListener('click', cancelInvoice);
+
+  function startInvoice() {
+    inv      = document.getElementById('inp-invoice').value.trim();
+    buyer    = document.getElementById('inp-buyer').value.trim();
+    agent    = document.getElementById('inp-agent').value.trim();
+    product  = document.getElementById('inp-product').value;
+    qty      = document.getElementById('inp-qty').value.trim();
+    location = document.getElementById('inp-location').value.trim();
+    notes    = document.getElementById('inp-notes').value.trim();
+
+    if (!inv || !buyer || !agent) { showToast('Fill in invoice, buyer and agent', true); return; }
+
+    document.getElementById('disp-invoice').textContent = inv;
+    document.getElementById('disp-buyer').textContent   = buyer;
+    document.getElementById('disp-product').textContent = product;
+
+    showScreen('screen-scan');
+    startCamera();
+  }
+
+  async function startCamera() {
+    setStatus('Requesting camera…');
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 } }
+      });
+      const video = document.getElementById('video');
+      video.srcObject = stream;
+      await video.play();
+      setStatus('Camera ready — point at a barcode');
+      startDetection(video);
+    } catch(err) {
+      if (err.name === 'NotAllowedError') {
+        setStatus('❌ Camera blocked. Tap the camera icon in your address bar and allow access, then reload.');
+      } else {
+        setStatus('❌ Camera error: ' + err.message);
+      }
+    }
+  }
+
+  async function startDetection(video) {
+    // Use native BarcodeDetector if available (Chrome Android supports this)
+    if ('BarcodeDetector' in window) {
+      setStatus('✓ Native scanner active');
+      detector = new BarcodeDetector({ formats: ['code_128', 'code_39', 'qr_code', 'ean_13', 'ean_8', 'upc_a', 'upc_e', 'data_matrix', 'aztec', 'pdf417'] });
+      runNativeLoop(video);
+    } else {
+      // Fallback: load ZXing dynamically
+      setStatus('Loading scanner library…');
+      loadZXing(video);
+    }
+  }
+
+  function runNativeLoop(video) {
+    scanLoop = setInterval(async () => {
+      if (video.readyState !== video.HAVE_ENOUGH_DATA) return;
+      try {
+        const barcodes = await detector.detect(video);
+        if (barcodes.length > 0) {
+          handleScan(barcodes[0].rawValue);
+        }
+      } catch(e) {}
+    }, 300);
+  }
+
+  function loadZXing(video) {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/@zxing/library@0.19.1/umd/index.min.js';
+    s.onload = () => {
+      setStatus('✓ Scanner ready');
+      const hints = new Map();
+      hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+      const reader = new ZXing.BrowserMultiFormatReader(hints);
+      // decodeFromStream uses the already-running video stream
+      reader.decodeFromStream(stream, video, (result, err) => {
+        if (result) handleScan(result.getText());
+      });
+    };
+    s.onerror = () => setStatus('❌ Could not load scanner. Check internet and reload.');
+    document.head.appendChild(s);
+  }
+
+  function handleScan(bagId) {
+    if (!bagId) return;
+    if (cooldown && bagId === lastScanned) return;
+    lastScanned = bagId;
+    cooldown    = true;
+    setTimeout(() => { cooldown = false; }, 2500);
+
+    if (navigator.vibrate) navigator.vibrate(120);
+
+    // Duplicate check
+    if (scannedBags.includes(bagId)) {
+      showToast('⚠️ Already scanned: ' + bagId, true);
+      return;
+    }
+
+    addToList(bagId, new Date().toLocaleTimeString());
+    showToast('✓ ' + bagId);
+
+    fetch(APPS_SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ invoice: inv, buyer: buyer, agent: agent, bagId: bagId, productType: product, quantity: qty, location: location, notes: notes })
+    })
+    .then(r => r.json())
+    .then(res => { if (!res.success) showToast('Save failed', true); })
+    .catch(() => showToast('⚠️ ' + bagId + ' logged but not saved — check connection', true));
+  }
+
+  function addToList(bagId, time) {
+    scannedBags.push(bagId);
+    document.getElementById('scan-count').innerHTML = scannedBags.length + '<small>bags scanned</small>';
+    const list  = document.getElementById('scan-list');
+    const empty = list.querySelector('.empty-state');
+    if (empty) empty.remove();
+    const item  = document.createElement('div');
+    item.className = 'scan-item';
+    item.innerHTML = '<span class="bag-id">' + bagId + '</span><span class="st">' + time + '</span>';
+    list.insertBefore(item, list.firstChild);
+  }
+
+  function finishInvoice() {
+    if (scannedBags.length === 0) { showToast('No bags scanned yet', true); return; }
+    if (confirm('Finish ' + inv + '?\n' + scannedBags.length + ' bag(s) saved.')) {
+      stopCamera(); reset(); showToast('Invoice ' + inv + ' complete ✓');
+    }
+  }
+
+  function cancelInvoice() {
+    if (scannedBags.length === 0 || confirm('Cancel? Saved scans remain in the sheet.')) {
+      stopCamera(); reset();
+    }
+  }
+
+  function stopCamera() {
+    if (scanLoop) { clearInterval(scanLoop); scanLoop = null; }
+    if (stream)   { stream.getTracks().forEach(t => t.stop()); stream = null; }
+  }
+
+  function reset() {
+    scannedBags = []; lastScanned = '';
+    document.getElementById('scan-count').innerHTML = '0<small>bags scanned</small>';
+    document.getElementById('scan-list').innerHTML  = '<div class="empty-state">Point camera at a barcode</div>';
+    document.getElementById('video').srcObject = null;
+    showScreen('screen-setup');
+  }
+
+  function setStatus(msg) { document.getElementById('status-msg').textContent = msg; }
+
+  function showScreen(id) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+  }
+
+  let toastTimer;
+  function showToast(msg, isError) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.className   = 'show' + (isError ? ' error' : '');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { t.className = ''; }, 3000);
+  }
+</script>
+</body>
+</html>
